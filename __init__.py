@@ -60,6 +60,17 @@ class PopEmail:
     def close(self):
         self.connection.quit()
         self.connected = False
+
+    @staticmethod
+    def parse_body(mail):
+        from bs4 import BeautifulSoup
+        try:
+            bs = BeautifulSoup(mail.body, 'html.parser').body.get_text()
+        except:
+            bs = mail.body
+
+        return bs.split('--- mail_boundary ---')[0]
+    
 global pop_email
 """
     Obtengo el modulo que fue invocado
@@ -153,32 +164,36 @@ if module == "get_mail":
         raise e
 
 if module == "read_mail":
+    from mailparser import mailparser
+
     id_ = GetParams('id_')
     var_ = GetParams('var_')
     att_folder = GetParams('att_folder')
 
     try:
-        if pop_email.connected:
-            num_msg = pop_email.connection.stat()[0]
-        
-            if int(id_) > num_msg:
-                raise Exception(f"There is not id {id_}")
-
-            res, lines, octets = pop_email.connection.retr(int(id_))
-            msg_content = b'\r\n'.join(lines).decode('utf-8')
-            msg = Parser().parsestr(msg_content)
-            print(dir(msg))
-            att = get_attachments([msg], att_folder)
-            mail = {
-                "From": msg.get("From"),
-                "To": msg.get("To"),
-                "Subject": msg.get("Subject"),
-                "Date": msg.get("Date"),
-                "attachments": att
-            }
-            SetVar(var_, mail)
-        else:
+        if not pop_email.connected:
             raise Exception("Run server configuration command")
+            
+        num_msg = pop_email.connection.stat()[0]
+    
+        if int(id_) > num_msg:
+            raise Exception(f"There is not id {id_}")
+
+        res, lines, octets = pop_email.connection.retr(int(id_))
+        msg_content = b'\r\n'.join(lines).decode('utf-8')
+        msg = mailparser.parse_from_string(msg_content)
+        att = get_attachments([Parser().parsestr(msg_content)], att_folder)
+
+        mail = {
+            "From": ", ".join([b for (a, b) in msg.from_]),
+            "To": ", ".join([b for (a, b) in msg.to]),
+            "Subject": msg.subject,
+            "Body": PopEmail.parse_body(msg),
+            "Date": msg.date.__str__(),
+            "attachments": att
+        }
+        SetVar(var_, mail)
+            
 
 
     except Exception as e:
